@@ -40,6 +40,7 @@ class AssetLookup(BaseModel):
     address: str
     property: Property | None = None
     owner_name_matches: bool | None = Field(None, description="등기부 소유자명과 신청인 이름 일치 여부")
+    documents: list[str] = Field([], description="자동으로 발급·조회한 서류")
     error: str | None = None
 
 
@@ -49,6 +50,18 @@ class CaseCreate(BaseModel):
     phone: str
     addresses: list[str] = Field(min_length=1, description="양도한 부동산 소재지")
     concern: str = Field("", description="가장 세금이 아깝다고 느끼는 부분, 검토 희망 항목")
+
+
+class ConcernUpdate(BaseModel):
+    concern: str
+
+
+# 전자위임장을 받는 제휴 세무사. TODO: 제휴 세무사 목록이 정해지면 DB로 옮긴다.
+MANDATE_AGENT = {
+    "office": "한빛세무회계 (예시)",
+    "name": "김한빛 세무사",
+    "registration_no": "제12345호",
+}
 
 
 class MandateSign(BaseModel):

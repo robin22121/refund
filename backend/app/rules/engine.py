@@ -19,4 +19,8 @@ def run_diagnosis(data: TaxpayerData, today: date | None = None) -> DiagnosisRep
         if f.claim_deadline is None or f.claim_deadline >= today
     ]
     findings.sort(key=lambda f: (f.claim_deadline or date.max))
+    addresses = {p.id: p.address for p in data.properties}
+    for f in findings:
+        if f.property_id and f.property_address is None:
+            f.property_address = addresses.get(f.property_id)
     return DiagnosisReport(taxpayer_name=data.name, findings=findings)
