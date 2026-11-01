@@ -1,10 +1,15 @@
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
 
 from .cases import (
+    MANDATE_AGENT,
     MANDATE_SCOPES,
     AuthStart,
     Case,
     CaseCreate,
+    ConcernUpdate,
     CaseStatus,
     CaseStore,
     MandateSign,
@@ -12,7 +17,7 @@ from .cases import (
 )
 from .collectors import EasyAuthRequest, get_collector
 from .models import DiagnosisReport, TaxpayerData
-from .registry import MockRegistryFetcher
+from .registry import MockRegistryFetcher, search_addresses
 from .rules import run_diagnosis
 
 app = FastAPI(title="부동산 세금 환급 진단 API")
@@ -41,6 +46,20 @@ def create_case(req: CaseCreate) -> Case:
     return store.save(case)
 
 
+@app.get("/address/search")
+def address_search(q: str) -> list[dict]:
+    """소재지 입력을 돕는 주소 검색. 고령 사용자가 주소를 끝까지 치지 않아도 되게 한다."""
+    return search_addresses(q)
+
+
+@app.put("/cases/{case_id}/concern", response_model=Case)
+def update_concern(case_id: str, req: ConcernUpdate) -> Case:
+    """2단계: 자동 조회 결과를 본 뒤 검토 희망 항목을 적는다."""
+    case = _case(case_id)
+    case.applicant.concern = req.concern
+    return store.save(case)
+
+
 @app.get("/cases/{case_id}", response_model=Case)
 def get_case(case_id: str) -> Case:
     return _case(case_id)
@@ -50,6 +69,12 @@ def get_case(case_id: str) -> Case:
 def mandate_scopes() -> list[str]:
     """전자위임장에 표시할 위임·동의 항목."""
     return MANDATE_SCOPES
+
+
+@app.get("/mandate/info")
+def mandate_info() -> dict:
+    """전자위임장 화면에 표시할 수임 세무사와 위임 항목."""
+    return {"agent": MANDATE_AGENT, "scopes": MANDATE_SCOPES}
 
 
 @app.post("/cases/{case_id}/mandate", response_model=Case)
@@ -107,3 +132,9 @@ def diagnose(case_id: str) -> DiagnosisReport:
 def diagnose_raw(data: TaxpayerData) -> DiagnosisReport:
     """자료를 직접 넣어 진단한다. 룰 검증과 세무사 테스트용."""
     return run_diagnosis(data)
+
+
+# 모바일 웹 화면. API 경로가 먼저 매칭되도록 맨 마지막에 붙인다.
+FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
+if FRONTEND_DIR.is_dir():
+    app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

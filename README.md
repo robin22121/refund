@@ -23,7 +23,18 @@ backend/app/
   collectors/        자료 수집기 (mock: 가짜 데이터, hyphen: 하이픈 API)
   rules/             환급 사유 룰. config.py에 세법 기준값
   main.py            FastAPI 엔드포인트
+frontend/            고객용 모바일 웹 (빌드 없는 HTML·JS, 백엔드가 / 경로로 서비스)
 ```
+
+## 모바일 웹 화면
+
+네이버 카페·밴드 링크로 들어오는 고령 사용자를 기준으로 만들었습니다. 본문 19px, 버튼 높이 60px, 한 화면에 질문 하나.
+
+첫 화면 → 부동산 주소 검색 → 본인 정보(이름·생년월일 6자리·휴대폰) → 등기부 자동 조회 결과 확인 →
+궁금한 부분 고르기 → 전자위임장 서명 → 간편인증 앱 선택·승인 → 자료 수집 → 진단 리포트 → 세무사에게 신청
+
+지금은 하이픈 연동이 된 것으로 가정한 체험판입니다. 주소 검색은 예시 주소 4곳(마포·분당·예산·유성)만 찾고,
+인증 알림은 실제로 가지 않으며 "인증을 마쳤어요"를 누르면 가짜 홈택스 자료로 진단합니다.
 
 ## 실행
 
@@ -32,7 +43,7 @@ cd backend
 python -m venv ../.venv && . ../.venv/bin/activate
 pip install -r requirements.txt uvicorn
 python -m pytest -q
-uvicorn app.main:app --reload   # http://localhost:8000/docs
+uvicorn app.main:app --reload   # 화면 http://localhost:8000 · API 문서 /docs
 ```
 
 기본 수집기는 가짜 데이터입니다. 하이픈 계약 후 `.env.example`을 참고해 `COLLECTOR=hyphen`과 키를 설정합니다.

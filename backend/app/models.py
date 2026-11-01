@@ -98,6 +98,7 @@ class Finding(BaseModel):
     required_documents: list[str] = []
     claim_deadline: date | None = Field(None, description="경정청구 마감일")
     property_id: str | None = None
+    property_address: str | None = Field(None, description="화면 표시용 부동산 소재지")
 
 
 class DiagnosisReport(BaseModel):
