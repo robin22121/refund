@@ -269,47 +269,30 @@
 
   SCREENS.intro = () => {
     const thisYear = new Date().getFullYear();
-    const years = Array.from({ length: 6 }, (_, i) => thisYear - 6 + i);
+    const years = Array.from({ length: 5 }, (_, i) => thisYear - 5 + i);
     app.innerHTML = `
       <section class="hero">
-        <div class="tags"><span class="badge">진단 무료</span><span class="badge">회원가입 없음</span></div>
-        <h1>내가 낸 양도세,<br>돌려받을 수 있을까요?</h1>
-        <p class="lead">부동산 주소만 알려 주시면 서류는 저희가 대신 떼고, 신고 내용을 하나하나 따져 봐 드립니다.</p>
+        <p class="eyebrow">양도세 환급 무료 진단</p>
+        <h1>낸 양도세,<br>돌려받을 수 있는지<br>3분이면 알 수 있어요</h1>
+        <p class="lead">주소만 알려 주시면 서류는 저희가 뗍니다.</p>
       </section>
 
-      <div class="card deadline-check">
-        <h2 class="card-title">집을 언제 파셨어요?</h2>
-        <p class="small muted" style="margin:0 0 10px">누르시면 신청 마감일을 알려 드려요.</p>
+      <div class="panel">
+        <p class="panel-q">집을 언제 파셨어요?</p>
         <div class="year-chips" role="group" aria-label="판 연도">
-          ${years.map((y) => `<button type="button" data-y="${y}" aria-pressed="false">${y}년</button>`).join("")}
+          ${years.map((y) => `<button type="button" data-y="${y}" aria-pressed="false">${y}</button>`).join("")}
         </div>
         <div id="deadline-result" aria-live="polite"></div>
       </div>
 
-      <ul class="benefits">
-        <li><span class="ico">₩</span><div><b>돌려받는 돈이 없으면 0원</b><br><span class="muted small">진단은 무료이고, 환급이 확정될 때만 세무사 수수료가 생깁니다.</span></div></li>
-        <li><span class="ico">✓</span><div><b>서류를 따로 떼지 않아도 됩니다</b><br><span class="muted small">등기부등본·대장·토지이용계획·초본을 자동으로 발급합니다.</span></div></li>
-        <li><span class="ico">⚖</span><div><b>양도세 전문가가 만든 기준</b><br><span class="muted small">양도세 담당 공무원 출신이 만든 점검표로 진단하고, 제휴 세무사가 확인합니다.</span></div></li>
-        <li><span class="ico">🔒</span><div><b>비밀번호·인증서를 저장하지 않아요</b><br><span class="muted small">인증은 자료를 불러오는 순간에만 쓰입니다.</span></div></li>
+      <ul class="checks">
+        <li>환급이 없으면 비용 0원</li>
+        <li>회원가입 없이 바로 시작</li>
+        <li>등기부등본·대장 자동 발급</li>
       </ul>
 
-      <div class="card soft">
-        <b>이렇게 진행돼요 (약 3분)</b>
-        <ol class="steps-mini" style="margin-top:10px">
-          <li>판 부동산 주소 입력</li>
-          <li>서류 자동 발급 · 내용 확인</li>
-          <li>궁금한 부분 고르기</li>
-          <li>전자위임장 서명</li>
-          <li>휴대폰으로 간편인증</li>
-          <li>진단 결과 바로 확인</li>
-        </ol>
-      </div>
-
-      <h2>자주 묻는 질문</h2>
-      ${faqList("start")}
-
-      <button type="button" class="share-row" id="share">자녀·가족에게 이 페이지 보내기</button>
-      <p class="disclaimer">진단 결과는 신고 자료를 자동으로 분석한 참고용입니다. 실제 환급 신청과 신고 대리는 제휴 세무사가 맡습니다.</p>
+      <p class="disclaimer">진단은 참고용이며, 실제 신청은 제휴 세무사가 맡습니다.
+        <button type="button" class="text-link inline" id="share">가족에게 보내기</button></p>
       ${bottom(`<button class="btn" id="start">무료로 진단 시작하기</button>`)}
     `;
     app.querySelectorAll(".year-chips button").forEach((b) => (b.onclick = () => {
@@ -318,8 +301,8 @@
       const dl = claimDeadline(y);
       const open = new Date(dl + "T23:59:59") >= new Date();
       $("#deadline-result").innerHTML = open
-        ? `<div class="deadline-box ok"><b>${koDate(dl)}까지</b> 신청할 수 있어요.<span class="badge warn">${dday(dl)}</span></div>`
-        : `<div class="deadline-box late">${y}년에 판 집은 양도세 환급 신청 기한(5년)이 지났어요. 그 뒤에 판 부동산이 있다면 진단해 보세요.</div>`;
+        ? `<p class="deadline-line"><b>${koDate(dl)}</b>까지 신청할 수 있어요 <span class="dday">${dday(dl)}</span></p>`
+        : `<p class="deadline-line late">${y}년에 판 집은 신청 기한(5년)이 지났어요.</p>`;
     }));
     $("#share").onclick = () => share("양도세 낸 것 중에 돌려받을 수 있는 게 있는지 무료로 확인해 주는 곳이에요. 같이 봐 줄래요?");
     $("#start").onclick = () => {
@@ -495,7 +478,7 @@
     app.innerHTML = `
       <h1>세금 낼 때 가장<br>아깝다고 느낀 부분은요?</h1>
       <p class="lead">해당하는 것을 모두 눌러 주세요. 이 부분부터 꼼꼼히 봐 드립니다.</p>
-      <div class="note">잘 몰라서 대충 고르셔도 괜찮아요. 세무사가 신고 내용 전체를 다시 확인합니다.</div>
+      <p class="small muted">잘 모르시면 아무거나 고르셔도 괜찮아요. 세무사가 전체를 다시 봅니다.</p>
       <div class="choices" role="group" aria-label="검토 희망 항목">
         ${CONCERNS.map((c) => `
           <button type="button" class="choice" data-id="${c.id}" aria-pressed="${state.concerns.includes(c.id)}">
@@ -638,17 +621,12 @@
             <span class="logo" style="background:${p.bg};color:${p.fg}">${p.short}</span>${p.name}
           </button>`).join("")}
       </div>
-      <div class="card" style="margin-top:20px">
-        <dl class="facts"><dt>이름</dt><dd>${esc(state.name)}</dd><dt>휴대폰</dt><dd>${esc(state.phone)}</dd></dl>
-      </div>
-      <div class="note">인증 요청이 1~2번 올 수 있어요. 올 때마다 ‘인증하기’를 눌러 주세요.</div>
-      <p class="small muted">인증은 홈택스·위택스·정부24 자료 조회에만 쓰이며, 비밀번호나 인증서는 저장하지 않습니다.</p>
-      <h2>인증이 처음이세요?</h2>
-      ${faqList("auth")}
-      <button type="button" class="share-row" id="share">가족에게 보내 도움받기</button>
+      <p class="to-whom">${esc(state.name)}님 · ${esc(state.phone)}</p>
+      <p class="small muted">인증 요청이 1~2번 올 수 있어요. 비밀번호나 인증서는 저장하지 않습니다.</p>
+      <button type="button" class="text-link" id="no-cert">간편인증서가 없으신가요?</button>
       ${bottom(`<button class="btn" id="next">인증 요청 보내기</button>`)}
     `;
-    $("#share").onclick = () => share("양도세 환급 진단 중인데 간편인증을 좀 도와줄래요?");
+    $("#no-cert").onclick = openHelp;
     app.querySelectorAll(".provider").forEach((b) => (b.onclick = () => {
       state.provider = b.dataset.id; save();
       app.querySelectorAll(".provider").forEach((x) => x.setAttribute("aria-pressed", x.dataset.id === state.provider));
