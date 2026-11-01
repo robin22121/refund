@@ -1,8 +1,8 @@
-from fastapi.testclient import TestClient
+from tests.helpers import SIGNATURE, TokenClient
 
 from app.main import app
 
-client = TestClient(app)
+client = TokenClient(app)
 
 APPLICANT = {
     "name": "홍길동",
@@ -23,7 +23,7 @@ def _sign(case_id, scopes=None):
     scopes = scopes if scopes is not None else client.get("/mandate/scopes").json()
     return client.post(
         f"/cases/{case_id}/mandate",
-        json={"signer_name": "홍길동", "agreed_scopes": scopes, "signature_image": "data:image/png;base64,AAAA"},
+        json={"signer_name": "홍길동", "agreed_scopes": scopes, "signature_image": SIGNATURE},
     )
 
 
@@ -67,7 +67,7 @@ def test_mock_report_uses_applicant_name_and_addresses():
     case = client.post("/cases", json={**APPLICANT, "name": "김영숙"}).json()
     client.post(
         f"/cases/{case['id']}/mandate",
-        json={"signer_name": "김영숙", "agreed_scopes": MANDATE, "signature_image": "data:,"},
+        json={"signer_name": "김영숙", "agreed_scopes": MANDATE, "signature_image": SIGNATURE},
     )
     client.post(f"/cases/{case['id']}/auth/start", json={"provider": "kakao"})
     report = client.post(f"/cases/{case['id']}/diagnosis").json()

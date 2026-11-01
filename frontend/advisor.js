@@ -156,7 +156,8 @@
         </table>
       </div>
       <div class="grid2">
-        <div class="card"><h3>위택스 지방세 납부</h3><ul style="margin:8px 0 0;padding-left:18px">${c.data.local_tax_payments.map((p) => `<li>${esc(p.tax_type)} ${won(p.amount)} · ${p.paid_on} · ${esc(addr(p.property_id))}</li>`).join("") || "<li>없음</li>"}</ul></div>
+        <div class="card"><h3>위택스 지방세 납부</h3><ul style="margin:8px 0 0;padding-left:18px">${c.data.local_tax_payments.map((p) => `<li>${esc(p.tax_type)} ${won(p.amount)} · ${p.paid_on} · ${esc(addr(p.property_id))}${p.tax_base ? `<br><span class="small muted">과세표준 ${won(p.tax_base)} · 세율 ${(p.rate * 100).toFixed(2)}%${p.reduction ? ` · 감면 ${won(p.reduction)}${p.reduction_name ? ` (${esc(p.reduction_name)})` : ""}` : ""}</span>` : ""}</li>`).join("") || "<li>없음</li>"}</ul></div>
+        <div class="card"><h3>홈택스 종합부동산세 고지 내역</h3><ul style="margin:8px 0 0;padding-left:18px">${(c.data.comprehensive_tax_returns || []).map((r) => `<li>${r.year}년분 ${won(r.tax_paid)} · ${r.houses_counted}주택${r.one_house_applied ? " · 1세대1주택" : ""}${r.heavy_rate_applied ? " · 중과" : ""}<br><span class="small muted">공제 ${won(r.basic_deduction)}${r.one_house_applied ? ` · 세액공제 고령 ${Math.round(r.age_credit_rate * 100)}% 장기 ${Math.round(r.holding_credit_rate * 100)}%` : ""}${r.filed_by_return ? " · 신고납부" : " · 고지"}</span></li>`).join("") || "<li>없음</li>"}</ul></div>
         <div class="card"><h3>주민등록초본 전입 이력</h3><ul style="margin:8px 0 0;padding-left:18px">${c.data.residences.map((r) => `<li>${r.moved_in} ~ ${r.moved_out || "현재"} · ${esc(r.address)}</li>`).join("")}</ul></div>
       </div>` : ""}
 

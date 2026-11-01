@@ -2,11 +2,11 @@ from collections.abc import Callable
 from datetime import date
 
 from ..models import DiagnosisReport, Finding, TaxpayerData
-from . import capital_gains
+from . import acquisition_tax, capital_gains, comprehensive_tax
 
 Rule = Callable[[TaxpayerData], list[Finding]]
 
-ALL_RULES: list[Rule] = [*capital_gains.RULES]
+ALL_RULES: list[Rule] = [*capital_gains.RULES, *acquisition_tax.RULES, *comprehensive_tax.RULES]
 
 
 def run_diagnosis(data: TaxpayerData, today: date | None = None) -> DiagnosisReport:

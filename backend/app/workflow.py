@@ -22,8 +22,7 @@ from .claims import (
     Submission,
 )
 
-# 국세는 홈택스, 지방세는 위택스로 경정청구한다.
-CHANNEL = {"양도소득세": "홈택스", "종합부동산세": "홈택스", "취득세": "위택스", "재산세": "위택스"}
+from .analysis.legal import CHANNEL  # 국세는 홈택스, 지방세는 위택스로 경정청구한다
 
 PLATFORM = "플랫폼"
 RESULT_DAYS = 61  # 국세기본법 제45조의2 제3항: 청구일부터 2개월 안에 통지

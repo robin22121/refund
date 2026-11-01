@@ -9,16 +9,18 @@
 """
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import date, datetime, timezone
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from .analysis.models import StrategyDraft
 from .claims import Decision, Filing, Review
 from .collectors.base import EasyAuthProvider
 from .models import DiagnosisReport, Property, TaxpayerData
+from .security import Cipher, sha256_hex
 
 
 class CaseStatus(str, Enum):
@@ -73,17 +75,44 @@ MANDATE_AGENT = {
 }
 
 
+SIGNATURE_MAX_CHARS = 400_000  # 서명 이미지 data URL 최대 길이 (약 300KB)
+SIGNATURE_PREFIXES = ("data:image/png;base64,", "data:image/jpeg;base64,")
+
+
 class MandateSign(BaseModel):
     signer_name: str
     agreed_scopes: list[str]
-    signature_image: str = Field(description="서명 이미지 (data URL 또는 Base64)")
+    signature_image: str = Field(description="서명 이미지 (PNG·JPEG data URL)", max_length=SIGNATURE_MAX_CHARS)
+
+    @field_validator("signature_image")
+    @classmethod
+    def _image(cls, v: str) -> str:
+        if not v.startswith(SIGNATURE_PREFIXES) or len(v) <= len(SIGNATURE_PREFIXES[0]) + 8:
+            raise ValueError("서명 이미지가 올바르지 않습니다")
+        return v
 
 
 class Mandate(BaseModel):
+    """전자위임장. 무엇을 누구에게 위임했는지와 서명을 해시로 묶어 나중에 바뀌지 않았음을 보인다."""
+
     signer_name: str
+    agent: dict = Field(description="수임 세무사")
     scopes: list[str]
-    signature_image: str
+    signature_image: str = Field(description="API 응답에서는 빠진다")
     signed_at: datetime
+    signer_ip: str = ""
+    document_hash: str = Field("", description="위임 내용 + 서명 이미지의 SHA-256")
+
+
+def mandate_hash(m: Mandate) -> str:
+    doc = {
+        "signer_name": m.signer_name,
+        "agent": m.agent,
+        "scopes": m.scopes,
+        "signed_at": m.signed_at.isoformat(),
+        "signature_sha256": sha256_hex(m.signature_image),
+    }
+    return sha256_hex(json.dumps(doc, ensure_ascii=False, sort_keys=True))
 
 
 class AuthStart(BaseModel):
@@ -93,6 +122,7 @@ class AuthStart(BaseModel):
 class Case(BaseModel):
     id: str = Field(default_factory=lambda: uuid.uuid4().hex)
     applicant: CaseCreate
+    access_token_hash: str | None = Field(None, description="고객 접근 토큰 해시. API 응답에서는 빠진다")
     assets: list[AssetLookup] = []
     status: CaseStatus = CaseStatus.RECEIVED
     mandate: Mandate | None = None
@@ -110,34 +140,61 @@ class Case(BaseModel):
     decision: Decision | None = None
 
 
-class CaseStore:
-    """임시 메모리 저장소. TODO: DB로 교체."""
+# API 응답에서 뺄 필드. 고객은 자기 건이라도 원자료·세무사 검토 내용은 보지 않는다.
+INTERNAL_FIELDS = {"access_token_hash": True, "auth_session_id": True, "mandate": {"signature_image"}}
+CUSTOMER_HIDDEN = INTERNAL_FIELDS | {"data": True, "strategy": True, "review": True, "strategy_error": True}
 
-    def __init__(self) -> None:
-        self._cases: dict[str, Case] = {}
+
+def customer_view(case: Case) -> dict:
+    return case.model_dump(mode="json", exclude=CUSTOMER_HIDDEN)
+
+
+def advisor_view(case: Case) -> dict:
+    return case.model_dump(mode="json", exclude=INTERNAL_FIELDS)
+
+
+class CaseStore:
+    """임시 메모리 저장소. 건마다 AES-256-GCM으로 암호화해 둔다 (건 id를 AAD로 묶어 바꿔치기 방지).
+
+    TODO: DB로 교체. 그때도 암호문 컬럼에 그대로 넣고, 검색이 필요한 값만 따로 해시 컬럼을 둔다.
+    """
+
+    def __init__(self, cipher: Cipher | None = None) -> None:
+        self._cipher = cipher or Cipher.from_env()
+        self._cases: dict[str, str] = {}
 
     def save(self, case: Case) -> Case:
-        self._cases[case.id] = case
+        self._cases[case.id] = self._cipher.seal(case.model_dump_json(), aad=case.id)
         return case
 
     def get(self, case_id: str) -> Case | None:
-        return self._cases.get(case_id)
+        blob = self._cases.get(case_id)
+        return None if blob is None else Case.model_validate_json(self._cipher.open(blob, aad=case_id))
 
     def all(self) -> list[Case]:
-        return list(self._cases.values())
+        return [c for cid in self._cases if (c := self.get(cid))]
+
+    def raw(self, case_id: str) -> str | None:
+        """저장된 암호문 (테스트·점검용)."""
+        return self._cases.get(case_id)
 
 
-def sign_mandate(case: Case, req: MandateSign) -> Case:
+def sign_mandate(case: Case, req: MandateSign, signer_ip: str = "") -> Case:
     missing = [s for s in MANDATE_SCOPES if s not in req.agreed_scopes]
     if missing:
         raise ValueError(f"동의하지 않은 위임 항목: {', '.join(missing)}")
     if req.signer_name != case.applicant.name:
         raise ValueError("서명자 이름이 신청인과 다릅니다")
+    if case.status not in (CaseStatus.RECEIVED, CaseStatus.MANDATE_SIGNED):
+        raise ValueError("인증을 시작한 뒤에는 위임장을 다시 쓸 수 없습니다")
     case.mandate = Mandate(
         signer_name=req.signer_name,
+        agent=dict(MANDATE_AGENT),
         scopes=list(MANDATE_SCOPES),
         signature_image=req.signature_image,
         signed_at=datetime.now(timezone.utc),
+        signer_ip=signer_ip,
     )
+    case.mandate.document_hash = mandate_hash(case.mandate)
     case.status = CaseStatus.MANDATE_SIGNED
     return case

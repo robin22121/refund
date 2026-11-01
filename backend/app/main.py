@@ -1,8 +1,7 @@
-import os
 import secrets
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 
 from .cases import (
@@ -15,6 +14,8 @@ from .cases import (
     CaseStatus,
     CaseStore,
     MandateSign,
+    advisor_view,
+    customer_view,
     sign_mandate,
 )
 from . import workflow
@@ -25,6 +26,16 @@ from .collectors import EasyAuthRequest, get_collector
 from .models import DiagnosisReport, TaxpayerData
 from .registry import MockRegistryFetcher, search_addresses
 from .rules import run_diagnosis
+from .security import (
+    SECURITY_HEADERS,
+    AuditLog,
+    FailureLimiter,
+    advisor_key_from_env,
+    hash_token,
+    is_production,
+    new_token,
+    token_matches,
+)
 
 app = FastAPI(title="부동산 세금 환급 진단 API")
 collector = get_collector()
@@ -33,8 +44,25 @@ store = CaseStore()
 analyst = get_analyst()
 ledger = Ledger()
 gateway = MockPaymentGateway()
-# 세무사 화면 접근 키. TODO: 세무사 계정·로그인으로 교체
-ADVISOR_KEY = os.getenv("ADVISOR_KEY", "demo-advisor")
+# 세무사 화면 접근 키. 운영 환경에서는 기본값을 쓸 수 없다. TODO: 세무사별 계정·2단계 인증으로 교체
+ADVISOR_KEY = advisor_key_from_env()
+advisor_limiter = FailureLimiter()
+audit = AuditLog()
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.update(SECURITY_HEADERS)
+    if not request.url.path.endswith((".js", ".css", ".png", ".svg", ".ico")):
+        response.headers["Cache-Control"] = "no-store"
+    if is_production():
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
+
+def _ip(request: Request) -> str:
+    return request.client.host if request.client else ""
 
 
 def _case(case_id: str) -> Case:
@@ -44,17 +72,30 @@ def _case(case_id: str) -> Case:
     return case
 
 
+def customer_case(case_id: str, x_case_token: str = Header("")) -> Case:
+    """고객 API: 접수할 때 받은 토큰이 맞아야 그 건을 볼 수 있다."""
+    case = _case(case_id)
+    if not token_matches(x_case_token, case.access_token_hash):
+        raise HTTPException(403, "이 접수 건에 접근할 수 없습니다. 처음부터 다시 진행해 주세요.")
+    return case
+
+
 @app.get("/health")
 def health() -> dict:
     return {"ok": True}
 
 
-@app.post("/cases", response_model=Case)
-def create_case(req: CaseCreate) -> Case:
-    """1~2단계: 소재지와 검토 희망 항목을 받고 등기부 등을 자동 조회한다."""
-    case = Case(applicant=req)
+@app.post("/cases")
+def create_case(req: CaseCreate) -> dict:
+    """1~2단계: 소재지와 검토 희망 항목을 받고 등기부 등을 자동 조회한다.
+
+    응답의 access_token은 이때 한 번만 내려 준다. 이후 고객 API는 X-Case-Token 헤더로 보낸다.
+    """
+    token = new_token()
+    case = Case(applicant=req, access_token_hash=hash_token(token))
     case.assets = [registry.lookup(a, req.name) for a in req.addresses]
-    return store.save(case)
+    store.save(case)
+    return customer_view(case) | {"access_token": token}
 
 
 @app.get("/address/search")
@@ -63,18 +104,17 @@ def address_search(q: str) -> list[dict]:
     return search_addresses(q)
 
 
-@app.put("/cases/{case_id}/concern", response_model=Case)
-def update_concern(case_id: str, req: ConcernUpdate) -> Case:
+@app.put("/cases/{case_id}/concern")
+def update_concern(req: ConcernUpdate, case: Case = Depends(customer_case)) -> dict:
     """2단계: 자동 조회 결과를 본 뒤 검토 희망 항목을 적는다."""
-    case = _case(case_id)
     case.applicant.concern = req.concern
     case.concern_rule_ids = req.concern_rule_ids
-    return store.save(case)
+    return customer_view(store.save(case))
 
 
-@app.get("/cases/{case_id}", response_model=Case)
-def get_case(case_id: str) -> Case:
-    return _case(case_id)
+@app.get("/cases/{case_id}")
+def get_case(case: Case = Depends(customer_case)) -> dict:
+    return customer_view(case)
 
 
 @app.get("/mandate/scopes")
@@ -89,20 +129,18 @@ def mandate_info() -> dict:
     return {"agent": MANDATE_AGENT, "scopes": MANDATE_SCOPES}
 
 
-@app.post("/cases/{case_id}/mandate", response_model=Case)
-def sign(case_id: str, req: MandateSign) -> Case:
+@app.post("/cases/{case_id}/mandate")
+def sign(req: MandateSign, request: Request, case: Case = Depends(customer_case)) -> dict:
     """3단계: 전자위임장 서명."""
-    case = _case(case_id)
     try:
-        return store.save(sign_mandate(case, req))
+        return customer_view(store.save(sign_mandate(case, req, signer_ip=_ip(request))))
     except ValueError as e:
         raise HTTPException(422, str(e))
 
 
-@app.post("/cases/{case_id}/auth/start", response_model=Case)
-def start_auth(case_id: str, req: AuthStart) -> Case:
+@app.post("/cases/{case_id}/auth/start")
+def start_auth(req: AuthStart, case: Case = Depends(customer_case)) -> dict:
     """4단계: 위임장 서명이 끝난 건만 홈택스 간편인증을 시작한다."""
-    case = _case(case_id)
     if case.mandate is None:
         raise HTTPException(409, "전자위임장 서명 후 인증할 수 있습니다")
     a = case.applicant
@@ -113,13 +151,12 @@ def start_auth(case_id: str, req: AuthStart) -> Case:
     except NotImplementedError as e:
         raise HTTPException(501, str(e))
     case.status = CaseStatus.AUTHENTICATING
-    return store.save(case)
+    return customer_view(store.save(case))
 
 
 @app.post("/cases/{case_id}/diagnosis", response_model=DiagnosisReport)
-def diagnose(case_id: str) -> DiagnosisReport:
+def diagnose(case: Case = Depends(customer_case)) -> DiagnosisReport:
     """사용자가 휴대폰에서 인증을 승인한 뒤 호출. 자료를 모아 진단한다."""
-    case = _case(case_id)
     if case.auth_session_id is None:
         raise HTTPException(409, "홈택스 인증을 먼저 진행해 주세요")
     try:
@@ -141,9 +178,26 @@ def diagnose(case_id: str) -> DiagnosisReport:
     return report
 
 
+def advisor(request: Request, x_advisor_key: str = Header("")) -> dict:
+    who = _ip(request)
+    if advisor_limiter.blocked(who):
+        raise HTTPException(429, "접근 키를 여러 번 틀려 잠시 막았습니다. 10분 뒤 다시 시도해 주세요.")
+    if not secrets.compare_digest(x_advisor_key.encode(), ADVISOR_KEY.encode()):
+        advisor_limiter.fail(who)
+        audit.record("unknown", "advisor_key_failed", None, who)
+        raise HTTPException(401, "세무사 접근 키가 맞지 않습니다")
+    advisor_limiter.reset(who)
+    request.state.actor = MANDATE_AGENT["name"]
+    return MANDATE_AGENT
+
+
+def _audit(request: Request, action: str, case_id: str | None = None) -> None:
+    audit.record(getattr(request.state, "actor", "?"), action, case_id, _ip(request))
+
+
 @app.post("/diagnosis", response_model=DiagnosisReport)
-def diagnose_raw(data: TaxpayerData) -> DiagnosisReport:
-    """자료를 직접 넣어 진단한다. 룰 검증과 세무사 테스트용."""
+def diagnose_raw(data: TaxpayerData, _: dict = Depends(advisor)) -> DiagnosisReport:
+    """자료를 직접 넣어 진단한다. 룰 검증과 세무사 테스트용이라 세무사 키가 필요하다."""
     return run_diagnosis(data)
 
 
@@ -165,33 +219,27 @@ def get_fee_terms() -> dict:
 
 
 @app.post("/cases/{case_id}/request")
-def request_claim(case_id: str, req: ClaimRequest) -> dict:
+def request_claim(req: ClaimRequest, case: Case = Depends(customer_case)) -> dict:
     """진단 뒤 고객이 수수료 약정에 동의하고 세무사에게 맡긴다. AI 전략 초안을 이때 만든다."""
-    case = _run(workflow.request_claim, _case(case_id), req, analyst)
+    case = _run(workflow.request_claim, case, req, analyst)
     store.save(case)
     return workflow.progress(case, ledger)
 
 
 @app.get("/cases/{case_id}/progress")
-def case_progress(case_id: str) -> dict:
-    return workflow.progress(_case(case_id), ledger)
+def case_progress(case: Case = Depends(customer_case)) -> dict:
+    return workflow.progress(case, ledger)
 
 
 @app.post("/cases/{case_id}/payment")
-def pay(case_id: str, req: PaymentRequest) -> dict:
+def pay(req: PaymentRequest, case: Case = Depends(customer_case)) -> dict:
     """환급이 결정된 뒤 성공보수를 결제한다 (가짜 PG)."""
-    case = _run(workflow.pay_success_fee, _case(case_id), req.method, ledger, gateway)
+    case = _run(workflow.pay_success_fee, case, req.method, ledger, gateway)
     store.save(case)
     return workflow.progress(case, ledger)
 
 
 # ---------- 세무사: 검토 · 제출 · 결과 기록 ----------
-
-def advisor(x_advisor_key: str = Header("")) -> dict:
-    if not secrets.compare_digest(x_advisor_key, ADVISOR_KEY):
-        raise HTTPException(401, "세무사 접근 키가 맞지 않습니다")
-    return MANDATE_AGENT
-
 
 def _advisor_case(case_id: str) -> Case:
     case = _case(case_id)
@@ -201,8 +249,9 @@ def _advisor_case(case_id: str) -> Case:
 
 
 @app.get("/advisor/cases")
-def advisor_cases(_: dict = Depends(advisor)) -> list[dict]:
+def advisor_cases(request: Request, _: dict = Depends(advisor)) -> list[dict]:
     """세무사에게 맡겨진 건 목록. 마감이 급한 순서."""
+    _audit(request, "list_cases")
     rows = []
     for c in store.all():
         if c.requested_at is None:
@@ -224,35 +273,44 @@ def advisor_cases(_: dict = Depends(advisor)) -> list[dict]:
     return rows
 
 
-@app.get("/advisor/cases/{case_id}", response_model=Case)
-def advisor_case(case_id: str, _: dict = Depends(advisor)) -> Case:
-    return _advisor_case(case_id)
+@app.get("/advisor/cases/{case_id}")
+def advisor_case(case_id: str, request: Request, _: dict = Depends(advisor)) -> dict:
+    case = _advisor_case(case_id)
+    _audit(request, "view_case", case_id)
+    return advisor_view(case)
 
 
-@app.post("/advisor/cases/{case_id}/strategy", response_model=Case)
-def regenerate_strategy(case_id: str, _: dict = Depends(advisor)) -> Case:
+@app.post("/advisor/cases/{case_id}/strategy")
+def regenerate_strategy(case_id: str, request: Request, _: dict = Depends(advisor)) -> dict:
     """AI 초안을 다시 만든다. 세무사가 고친 검토 내용은 초기화된다."""
     case = _advisor_case(case_id)
     if case.status not in (CaseStatus.REQUESTED, CaseStatus.REVIEWING):
         raise HTTPException(409, "제출한 뒤에는 초안을 다시 만들 수 없습니다")
-    return store.save(workflow.generate_strategy(case, analyst))
+    _audit(request, "regenerate_strategy", case_id)
+    return advisor_view(store.save(workflow.generate_strategy(case, analyst)))
 
 
-@app.put("/advisor/cases/{case_id}/review", response_model=Case)
-def save_review(case_id: str, req: ReviewUpdate, _: dict = Depends(advisor)) -> Case:
-    return store.save(_run(workflow.save_review, _advisor_case(case_id), req))
+@app.put("/advisor/cases/{case_id}/review")
+def save_review(case_id: str, req: ReviewUpdate, request: Request, _: dict = Depends(advisor)) -> dict:
+    case = store.save(_run(workflow.save_review, _advisor_case(case_id), req))
+    _audit(request, "save_review", case_id)
+    return advisor_view(case)
 
 
-@app.post("/advisor/cases/{case_id}/file", response_model=Case)
-def file_claim(case_id: str, _: dict = Depends(advisor)) -> Case:
+@app.post("/advisor/cases/{case_id}/file")
+def file_claim(case_id: str, request: Request, _: dict = Depends(advisor)) -> dict:
     """경정청구서 제출 (가짜 홈택스·위택스). 플랫폼 이용료가 이때 청구된다."""
-    return store.save(_run(workflow.file_claim, _advisor_case(case_id), ledger, gateway))
+    case = store.save(_run(workflow.file_claim, _advisor_case(case_id), ledger, gateway))
+    _audit(request, "file_claim", case_id)
+    return advisor_view(case)
 
 
-@app.post("/advisor/cases/{case_id}/decision", response_model=Case)
-def record_decision(case_id: str, req: DecisionInput, _: dict = Depends(advisor)) -> Case:
+@app.post("/advisor/cases/{case_id}/decision")
+def record_decision(case_id: str, req: DecisionInput, request: Request, _: dict = Depends(advisor)) -> dict:
     """세무서 결과 통지를 기록한다."""
-    return store.save(_run(workflow.record_decision, _advisor_case(case_id), req))
+    case = store.save(_run(workflow.record_decision, _advisor_case(case_id), req))
+    _audit(request, "record_decision", case_id)
+    return advisor_view(case)
 
 
 @app.get("/advisor/billing")
