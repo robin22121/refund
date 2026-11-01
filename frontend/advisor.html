@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>세무사 검토실</title>
+  <link rel="stylesheet" href="advisor.css">
+</head>
+<body>
+  <header class="bar">
+    <b class="brand">세무사 검토실</b>
+    <nav>
+      <button type="button" class="tab" data-tab="cases" aria-pressed="true">맡겨진 건</button>
+      <button type="button" class="tab" data-tab="billing" aria-pressed="false">정산</button>
+    </nav>
+    <span class="who" id="who"></span>
+  </header>
+  <div class="layout" id="layout">
+    <aside class="list" id="list" aria-label="맡겨진 건 목록"></aside>
+    <main class="detail" id="detail" tabindex="-1"></main>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <script src="advisor.js"></script>
+</body>
+</html>

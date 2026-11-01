@@ -15,8 +15,10 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
+from .analysis.models import StrategyDraft
+from .claims import Decision, Filing, Review
 from .collectors.base import EasyAuthProvider
-from .models import DiagnosisReport, Property
+from .models import DiagnosisReport, Property, TaxpayerData
 
 
 class CaseStatus(str, Enum):
@@ -24,6 +26,12 @@ class CaseStatus(str, Enum):
     MANDATE_SIGNED = "위임완료"   # 전자위임장 서명 완료
     AUTHENTICATING = "인증중"     # 홈택스 간편인증 요청됨
     DIAGNOSED = "진단완료"
+    REQUESTED = "신청접수"       # 고객이 수수료 약정에 동의하고 세무사에게 맡김. AI 초안 생성
+    REVIEWING = "세무사검토"      # 세무사가 초안을 검토·수정하는 중
+    FILED = "청구제출"           # 경정청구서 제출, 세무서 결과 대기
+    DECIDED = "환급결정"         # 세무서가 환급을 결정, 성공보수 결제 대기
+    REJECTED = "불인용"          # 세무서가 받아들이지 않음, 비용 없음
+    SETTLED = "정산완료"         # 성공보수 결제 완료
 
 
 MANDATE_SCOPES = [
@@ -54,6 +62,7 @@ class CaseCreate(BaseModel):
 
 class ConcernUpdate(BaseModel):
     concern: str
+    concern_rule_ids: list[str] = Field([], description="고객이 고른 항목과 연결된 룰 id. AI가 우선 검토")
 
 
 # 전자위임장을 받는 제휴 세무사. TODO: 제휴 세무사 목록이 정해지면 DB로 옮긴다.
@@ -89,6 +98,16 @@ class Case(BaseModel):
     mandate: Mandate | None = None
     auth_session_id: str | None = None
     report: DiagnosisReport | None = None
+    data: TaxpayerData | None = Field(None, description="수집한 원자료. AI 분석과 세무사 검토용")
+    concern_rule_ids: list[str] = []
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    requested_at: datetime | None = None
+    fee_agreed_at: datetime | None = None
+    strategy: StrategyDraft | None = None
+    strategy_error: str | None = None
+    review: Review | None = None
+    filing: Filing | None = None
+    decision: Decision | None = None
 
 
 class CaseStore:
@@ -103,6 +122,9 @@ class CaseStore:
 
     def get(self, case_id: str) -> Case | None:
         return self._cases.get(case_id)
+
+    def all(self) -> list[Case]:
+        return list(self._cases.values())
 
 
 def sign_mandate(case: Case, req: MandateSign) -> Case:

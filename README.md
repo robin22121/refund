@@ -9,9 +9,21 @@
 2. 제휴 세무사 앞으로 전자위임장에 서명합니다 (`POST /cases/{id}/mandate`).
 3. 서명이 끝난 건만 홈택스 간편인증을 시작합니다 (`POST /cases/{id}/auth/start`).
 4. 사용자가 휴대폰에서 승인하면 자료를 모아 룰 엔진으로 진단합니다 (`POST /cases/{id}/diagnosis`). 경정청구 기한이 남은 것만 돌려줍니다.
-5. (예정) AI가 검토 희망 항목부터 전략 초안을 쓰고 세무사가 검토해 경정청구를 대행합니다.
+5. 고객이 성공보수 약정에 동의하고 세무사에게 맡기면(`POST /cases/{id}/request`) AI가 환급 전략 초안을 씁니다.
+   검토 희망 항목을 앞에 두고, 쟁점마다 청구 이유·근거 조문·확보/추가 증빙·예상 반론·고객 질문과 경정청구서 청구 이유 초안을 만듭니다.
+6. 세무사가 검토실(`/advisor.html`)에서 항목별로 채택·보류·제외하고 금액과 청구 이유를 고쳐 제출합니다.
+   국세(양도세·종부세)는 홈택스, 취득세는 위택스로 세목별 청구서를 냅니다 (지금은 가짜 접수번호).
+7. 세무서 결과를 기록하면 고객 화면에 성공보수 결제가 열리고, 결제하면 정산이 끝납니다 (가짜 PG).
 
 수익: 진단은 무료, 환급 성공보수는 세무사가 받고 플랫폼은 세무사에게 건당 고정 이용료를 받습니다.
+요율은 `SUCCESS_FEE_RATE`(기본 15%, 부가세 별도), 이용료는 `PLATFORM_FEE_PER_CASE`(기본 5만 원, 경정청구 제출 시 청구)로 바꿉니다.
+
+## AI 분석
+
+`backend/app/analysis/`에 있습니다. `ANTHROPIC_API_KEY`가 있으면 Claude(`claude-opus-5-5`, 구조화 출력)로 초안을 쓰고,
+없으면 룰 결과와 `analysis/legal.py`의 근거 조문·반론 표로 가짜 초안을 만듭니다.
+AI에는 이름·연락처·생년월일을 보내지 않고(출생연도만), 마감일은 룰 엔진 계산을 따르며, AI가 새로 제기한 쟁점의 금액은 비워 세무사가 계산하게 합니다.
+AI 호출이 실패해도 신청은 접수되고 세무사가 직접 검토합니다.
 
 ## 구조
 
@@ -22,8 +34,13 @@ backend/app/
   registry.py        소재지로 등기부·대장 조회 (지금은 가짜 데이터)
   collectors/        자료 수집기 (mock: 가짜 데이터, hyphen: 하이픈 API)
   rules/             환급 사유 룰. config.py에 세법 기준값
+  analysis/          AI 환급 전략 초안 (claude: Claude API, mock: 가짜)
+  claims.py          세무사 검토·제출·결과 모델
+  workflow.py        신청 → 검토 → 제출 → 결과 → 성공보수 정산 상태 흐름
+  billing.py         성공보수·플랫폼 이용료 계산과 가짜 결제
   main.py            FastAPI 엔드포인트
 frontend/            고객용 모바일 웹 (빌드 없는 HTML·JS, 백엔드가 / 경로로 서비스)
+  advisor.html       세무사 검토실 (/advisor.html, 접근 키 demo-advisor)
 ```
 
 ## 모바일 웹 화면
@@ -43,7 +60,7 @@ cd backend
 python -m venv ../.venv && . ../.venv/bin/activate
 pip install -r requirements.txt uvicorn
 python -m pytest -q
-uvicorn app.main:app --reload   # 화면 http://localhost:8000 · API 문서 /docs
+uvicorn app.main:app --reload   # 고객 화면 http://localhost:8000 · 세무사 검토실 /advisor.html · API 문서 /docs
 ```
 
 기본 수집기는 가짜 데이터입니다. 하이픈 계약 후 `.env.example`을 참고해 `COLLECTOR=hyphen`과 키를 설정합니다.

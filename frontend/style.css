@@ -322,3 +322,4 @@ canvas.sign {
 .timeline li.now::before { border-color: var(--primary); }
 .timeline b { display: block; }
 .timeline span { color: var(--muted); font-size: .9rem; }
+.timeline li.skip { opacity: .5; }
