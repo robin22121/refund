@@ -47,6 +47,56 @@
     "환급 가능성 분석",
   ];
 
+  // 화면마다 바로 열어 볼 수 있는 질문. 도움말 버튼은 지금 화면의 묶음을 먼저 보여 준다.
+  const FAQ = {
+    start: {
+      title: "시작하기 전에",
+      items: [
+        ["누가 신청할 수 있나요?", "최근 5년 안에 양도소득세를 신고하고 낸 분이면 누구나 진단받을 수 있어요. 집을 판 다음 해 5월 31일이 신고 기한이고, 그날부터 5년 안에 돌려 달라고 신청(경정청구)할 수 있습니다."],
+        ["이미 세무사가 있어도 되나요?", "진단은 그대로 받으실 수 있어요. 실제로 환급을 신청할 때 누구에게 맡길지는 상담할 때 정하시면 됩니다."],
+        ["비용이 드나요?", "진단은 무료입니다. 환급이 확정되었을 때만 세무사 수수료가 생기고, 돌려받는 돈이 없으면 수수료도 없습니다."],
+        ["회원가입을 해야 하나요?", "아니요. 이름, 생년월일, 휴대폰 번호만 있으면 됩니다."],
+      ],
+    },
+    info: {
+      title: "정보 입력과 서류",
+      items: [
+        ["서류를 제가 떼야 하나요?", "아니요. 등기부등본, 건축물대장·토지대장, 토지이용계획확인원, 주민등록초본은 저희가 자동으로 발급합니다."],
+        ["주민등록번호는 왜 안 묻나요?", "등기부의 소유자와 같은 분인지 확인하고 인증 요청을 보내는 데는 생년월일과 휴대폰 번호면 충분해서, 꼭 필요한 것만 받습니다."],
+        ["잘 몰라서 아무거나 골랐어요", "괜찮아요. 고르신 항목은 먼저 살펴볼 순서일 뿐이고, 세무사가 신고 내용 전체를 다시 확인합니다. 모르시면 ‘잘 모르겠어요’를 누르세요."],
+      ],
+    },
+    mandate: {
+      title: "전자위임장",
+      items: [
+        ["위임장은 왜 필요한가요?", "세무사가 고객님 대신 홈택스 자료를 보고 세무서에 환급을 신청하려면 법에 따라 위임을 받아야 합니다."],
+        ["나중에 취소할 수 있나요?", "언제든 철회할 수 있어요. 진단만 받고 신청하지 않으셔도 비용은 없습니다."],
+      ],
+    },
+    auth: {
+      title: "간편인증",
+      items: [
+        ["간편인증서가 없어요", "카카오톡, 네이버, PASS, 토스 앱에서 ‘인증서’를 찾아 만들 수 있어요. 휴대폰 본인 확인과 계좌 확인으로 5분쯤 걸립니다. 어려우시면 아래 ‘가족에게 보내기’로 자녀분께 이 화면을 보내 도움을 받으세요."],
+        ["인증 요청은 몇 번 오나요?", "홈택스와 위택스·정부24 자료를 함께 불러오느라 1~2번 올 수 있어요. 올 때마다 ‘인증하기’를 눌러 주시면 됩니다."],
+        ["가족 휴대폰으로 인증해도 되나요?", "안 됩니다. 신고하신 분 본인 명의의 인증서로만 본인의 세금 자료를 볼 수 있어요."],
+        ["비밀번호나 인증서가 저장되나요?", "저장하지 않습니다. 인증은 자료를 불러오는 그 순간에만 쓰입니다."],
+      ],
+    },
+    after: {
+      title: "신청한 뒤",
+      items: [
+        ["얼마나 걸리나요?", "세무사가 1~2주 안에 서류를 확인하고 세무서에 신청합니다. 세무서는 신청을 받은 날부터 2개월 안에 결과를 알려 주고, 환급금은 그 뒤 고객님 계좌로 들어옵니다."],
+        ["진행 상황은 어떻게 알 수 있나요?", "단계가 바뀔 때마다 휴대폰 문자(카카오 알림톡)로 알려 드립니다."],
+        ["신청을 취소하고 싶어요", "세무사가 세무서에 내기 전이라면 전화 한 통으로 취소할 수 있고 비용은 없습니다."],
+        ["세무서에서 불이익을 받지 않나요?", "더 낸 세금을 돌려 달라고 하는 것은 법에 정해진 납세자의 권리입니다. 신청했다고 불이익을 받지 않습니다."],
+      ],
+    },
+  };
+  const FAQ_GROUP = {
+    intro: "start", address: "start", applicant: "info", lookup: "info", concern: "info",
+    mandate: "mandate", auth: "auth", authWait: "auth", collecting: "auth", report: "after", requested: "after",
+  };
+
   // ---------- 상태 ----------
   const initial = () => ({
     screen: "intro",
@@ -146,6 +196,40 @@
     return `${d.slice(0, 3)}-${d.slice(3, d.length - 4)}-${d.slice(-4)}`;
   }
 
+  const faqList = (key) => `<div class="faq">${FAQ[key].items.map(([q, a]) => `
+    <details><summary>${esc(q)}</summary><p>${esc(a)}</p></details>`).join("")}</div>`;
+
+  function openHelp() {
+    const first = FAQ_GROUP[state.screen] || "start";
+    const order = [first, ...Object.keys(FAQ).filter((k) => k !== first)];
+    $("#sheet-body").innerHTML = order.map((k) => `<h3 class="faq-title">${esc(FAQ[k].title)}</h3>${faqList(k)}`).join("")
+      + `<p class="small muted" style="margin-top:20px">더 궁금한 점은 신청 후 담당 세무사에게 전화로 물어보실 수 있어요.</p>`;
+    $("#sheet").hidden = false; $("#sheet-backdrop").hidden = false;
+    $("#sheet").scrollTop = 0;
+    $("#sheet-close").focus();
+  }
+  function closeHelp() { $("#sheet").hidden = true; $("#sheet-backdrop").hidden = true; $("#help-btn").focus(); }
+  $("#help-btn").onclick = openHelp;
+  $("#sheet-close").onclick = closeHelp;
+  $("#sheet-backdrop").onclick = closeHelp;
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#sheet").hidden) closeHelp(); });
+
+  // 네이버 카페·밴드로 들어온 분이 자녀에게 링크를 보내 도움을 받기 쉽게.
+  async function share(text) {
+    const data = { title: document.title, text, url: location.origin + location.pathname };
+    try {
+      if (navigator.share) { await navigator.share(data); return; }
+      await navigator.clipboard.writeText(`${text}\n${data.url}`);
+      toast("링크를 복사했어요. 카카오톡에 붙여 넣어 보내세요.");
+    } catch (e) {
+      if (e && e.name === "AbortError") return;
+      toast("공유하지 못했어요. 주소창의 주소를 복사해 보내 주세요.");
+    }
+  }
+
+  // 양도한 해 다음 해 5월 31일이 확정신고 기한이고, 그날부터 5년 안에 경정청구할 수 있다.
+  const claimDeadline = (soldYear) => `${soldYear + 6}-05-31`;
+
   // 화면 하단 고정 버튼
   const bottom = (inner) => `<div class="bottom"><div class="bottom-inner">${inner}</div></div>`;
 
@@ -184,29 +268,43 @@
   const SCREENS = {};
 
   SCREENS.intro = () => {
+    const thisYear = new Date().getFullYear();
+    const years = Array.from({ length: 5 }, (_, i) => thisYear - 5 + i);
     app.innerHTML = `
       <section class="hero">
-        <span class="badge">진단 무료</span>
-        <h1>내가 낸 양도세,<br>돌려받을 수 있을까요?</h1>
-        <p class="lead">부동산 주소만 알려 주시면 서류는 저희가 대신 떼고, 신고 내용을 하나하나 따져 봐 드립니다.</p>
+        <p class="eyebrow">양도세 환급 무료 진단</p>
+        <h1>낸 양도세,<br>돌려받을 수 있는지<br>3분이면 알 수 있어요</h1>
+        <p class="lead">주소만 알려 주시면 서류는 저희가 뗍니다.</p>
       </section>
-      <ul class="benefits">
-        <li><span class="ico">₩</span><div><b>진단은 무료입니다</b><br><span class="muted small">환급을 받게 될 때만 세무사 수수료가 생깁니다.</span></div></li>
-        <li><span class="ico">✓</span><div><b>서류를 따로 떼지 않아도 됩니다</b><br><span class="muted small">등기부등본·대장·토지이용계획·초본을 자동으로 발급합니다.</span></div></li>
-        <li><span class="ico">⚖</span><div><b>양도세 전문가가 만든 기준</b><br><span class="muted small">양도세 담당 공무원 출신이 만든 점검표로 진단하고, 제휴 세무사가 확인합니다.</span></div></li>
-      </ul>
-      <div class="card soft">
-        <b>이렇게 진행돼요 (약 3분)</b>
-        <ol class="steps-mini" style="margin-top:10px">
-          <li>판 부동산 주소 입력</li>
-          <li>궁금한 부분 고르기</li>
-          <li>전자위임장 서명</li>
-          <li>카카오톡으로 홈택스 인증</li>
-        </ol>
+
+      <div class="panel">
+        <p class="panel-q">집을 언제 파셨어요?</p>
+        <div class="year-chips" role="group" aria-label="판 연도">
+          ${years.map((y) => `<button type="button" data-y="${y}" aria-pressed="false">${y}</button>`).join("")}
+        </div>
+        <div id="deadline-result" aria-live="polite"></div>
       </div>
-      <p class="small muted">5년 안에 신고한 양도소득세가 대상입니다. 기한이 지나면 돌려받을 수 없으니 서둘러 확인하세요.</p>
+
+      <ul class="checks">
+        <li>환급이 없으면 비용 0원</li>
+        <li>회원가입 없이 바로 시작</li>
+        <li>등기부등본·대장 자동 발급</li>
+      </ul>
+
+      <p class="disclaimer">진단은 참고용이며, 실제 신청은 제휴 세무사가 맡습니다.
+        <button type="button" class="text-link inline" id="share">가족에게 보내기</button></p>
       ${bottom(`<button class="btn" id="start">무료로 진단 시작하기</button>`)}
     `;
+    app.querySelectorAll(".year-chips button").forEach((b) => (b.onclick = () => {
+      app.querySelectorAll(".year-chips button").forEach((x) => x.setAttribute("aria-pressed", x === b));
+      const y = Number(b.dataset.y);
+      const dl = claimDeadline(y);
+      const open = new Date(dl + "T23:59:59") >= new Date();
+      $("#deadline-result").innerHTML = open
+        ? `<p class="deadline-line"><b>${koDate(dl)}</b>까지 신청할 수 있어요 <span class="dday">${dday(dl)}</span></p>`
+        : `<p class="deadline-line late">${y}년에 판 집은 신청 기한(5년)이 지났어요.</p>`;
+    }));
+    $("#share").onclick = () => share("양도세 낸 것 중에 돌려받을 수 있는 게 있는지 무료로 확인해 주는 곳이에요. 같이 봐 줄래요?");
     $("#start").onclick = () => {
       if (state.report) { go("report"); return; }
       go("address");
@@ -380,6 +478,7 @@
     app.innerHTML = `
       <h1>세금 낼 때 가장<br>아깝다고 느낀 부분은요?</h1>
       <p class="lead">해당하는 것을 모두 눌러 주세요. 이 부분부터 꼼꼼히 봐 드립니다.</p>
+      <p class="small muted">잘 모르시면 아무거나 고르셔도 괜찮아요. 세무사가 전체를 다시 봅니다.</p>
       <div class="choices" role="group" aria-label="검토 희망 항목">
         ${CONCERNS.map((c) => `
           <button type="button" class="choice" data-id="${c.id}" aria-pressed="${state.concerns.includes(c.id)}">
@@ -522,12 +621,12 @@
             <span class="logo" style="background:${p.bg};color:${p.fg}">${p.short}</span>${p.name}
           </button>`).join("")}
       </div>
-      <div class="card" style="margin-top:20px">
-        <dl class="facts"><dt>이름</dt><dd>${esc(state.name)}</dd><dt>휴대폰</dt><dd>${esc(state.phone)}</dd></dl>
-      </div>
-      <p class="small muted">인증은 홈택스·위택스·정부24 자료 조회에만 쓰이며, 비밀번호나 인증서는 저장하지 않습니다.</p>
+      <p class="to-whom">${esc(state.name)}님 · ${esc(state.phone)}</p>
+      <p class="small muted">인증 요청이 1~2번 올 수 있어요. 비밀번호나 인증서는 저장하지 않습니다.</p>
+      <button type="button" class="text-link" id="no-cert">간편인증서가 없으신가요?</button>
       ${bottom(`<button class="btn" id="next">인증 요청 보내기</button>`)}
     `;
+    $("#no-cert").onclick = openHelp;
     app.querySelectorAll(".provider").forEach((b) => (b.onclick = () => {
       state.provider = b.dataset.id; save();
       app.querySelectorAll(".provider").forEach((x) => x.setAttribute("aria-pressed", x.dataset.id === state.provider));
@@ -637,11 +736,19 @@
               <p class="small muted" style="margin-top:6px">자동으로 뗀 서류 외에 영수증 등은 세무사가 따로 안내해 드려요.</p>
             </details>` : ""}
         </article>`).join("")}
+      <h2>이 결과는 이렇게 나왔어요</h2>
+      <ul class="sources">
+        <li>홈택스 양도소득세 신고내역</li>
+        <li>등기부등본·건축물대장·토지대장·토지이용계획확인원</li>
+        <li>위택스 취득세 납부내역, 주민등록초본 전입 이력</li>
+      </ul>
+      <button type="button" class="share-row" id="share">가족과 결과 함께 보기</button>
       <p class="disclaimer">이 결과는 신고 자료를 자동으로 분석한 참고용 진단입니다. 실제 환급 여부와 금액은 제휴 세무사가 검토한 뒤 확정됩니다.</p>
       ${bottom(state.requested
         ? `<button class="btn secondary" id="done">신청 완료 · 안내 다시 보기</button>`
         : `<button class="btn" id="apply">세무사에게 환급 신청 맡기기</button>`)}
     `;
+    $("#share").onclick = () => share(total ? `양도세 환급 진단을 받아 봤는데 약 ${manwon(total)}을 돌려받을 수 있다고 나왔어요. 같이 봐 줄래요?` : "양도세 환급 진단 결과가 나왔어요. 같이 봐 줄래요?");
     const apply = $("#apply");
     if (apply) apply.onclick = () => { state.requested = true; save(); go("requested"); };
     const done = $("#done");
@@ -654,16 +761,16 @@
       <div class="success-ico" aria-hidden="true">✓</div>
       <h1 class="center">환급 신청을 맡기셨어요</h1>
       <p class="lead center">${agent ? `${esc(agent.office)} ${esc(agent.name)}가` : "제휴 세무사가"} 1~2 영업일 안에<br><b>${esc(state.phone)}</b>로 연락드립니다.</p>
-      <div class="card">
-        <b>앞으로 이렇게 진행돼요</b>
-        <ol class="steps-mini" style="margin-top:10px">
-          <li>세무사가 진단 내용과 서류를 확인합니다</li>
-          <li>추가 영수증이 필요하면 전화로 안내드립니다</li>
-          <li>세무사가 세무서에 경정청구를 대신 냅니다</li>
-          <li>환급금이 고객님 계좌로 바로 들어갑니다</li>
-        </ol>
-      </div>
-      <p class="small muted">진단은 무료입니다. 수수료는 환급이 확정되었을 때만 세무사와 약정한 만큼 냅니다.</p>
+      <h2>앞으로 이렇게 진행돼요</h2>
+      <ol class="timeline">
+        <li class="done"><b>신청 접수</b><span>오늘</span></li>
+        <li class="now"><b>세무사 확인</b><span>1~2주 · 추가 영수증이 필요하면 전화로 안내</span></li>
+        <li><b>세무서에 환급 신청</b><span>세무사가 경정청구서를 대신 냅니다</span></li>
+        <li><b>세무서 결과 통지</b><span>신청한 날부터 2개월 안에</span></li>
+        <li><b>환급금 입금</b><span>고객님 계좌로 바로 들어갑니다</span></li>
+      </ol>
+      <div class="note">단계가 바뀔 때마다 ${esc(state.phone)}로 알림톡을 보내 드려요.</div>
+      <p class="small muted">진단은 무료입니다. 수수료는 환급이 확정되었을 때만 세무사와 약정한 만큼 냅니다. 세무서에 내기 전이라면 언제든 취소할 수 있어요.</p>
       ${bottom(`<button class="btn secondary" id="back-report">진단 결과 다시 보기</button>`)}
     `;
     $("#back-report").onclick = () => go("report");
