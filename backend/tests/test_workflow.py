@@ -1,7 +1,7 @@
 import json
 from types import SimpleNamespace
 
-from fastapi.testclient import TestClient
+from tests.helpers import SIGNATURE, TokenClient
 
 from app.analysis import AnalysisInput, MockAnalyst, analyze
 from app.analysis.claude import OUTPUT_SCHEMA, ClaudeAnalyst
@@ -9,7 +9,7 @@ from app.collectors.mock import sample_taxpayer
 from app.main import ADVISOR_KEY, app
 from app.rules import run_diagnosis
 
-client = TestClient(app)
+client = TokenClient(app)
 ADV = {"X-Advisor-Key": ADVISOR_KEY}
 
 APPLICANT = {
@@ -26,7 +26,7 @@ def _diagnosed_case():
     cid = case["id"]
     client.put(f"/cases/{cid}/concern", json={"concern": "공제가 적어요", "concern_rule_ids": ["CGT_LTHD_RESIDENCE"]})
     scopes = client.get("/mandate/scopes").json()
-    client.post(f"/cases/{cid}/mandate", json={"signer_name": "홍길동", "agreed_scopes": scopes, "signature_image": "x"})
+    client.post(f"/cases/{cid}/mandate", json={"signer_name": "홍길동", "agreed_scopes": scopes, "signature_image": SIGNATURE})
     client.post(f"/cases/{cid}/auth/start", json={"provider": "kakao"})
     client.post(f"/cases/{cid}/diagnosis")
     return cid
@@ -169,3 +169,28 @@ def test_claude_analyst_request_and_reconcile():
     added, ruled = draft.items
     assert added.rule_id is None and added.estimated_refund is None  # AI가 지어낸 룰 id·금액은 지운다
     assert ruled.claim_deadline == rule.claim_deadline  # 마감일은 룰 계산을 따른다
+
+
+def test_filing_splits_national_and_local_tax_channels():
+    cid = _diagnosed_case()
+    client.post(f"/cases/{cid}/request", json={"agree_fee_terms": True})
+    items = client.get(f"/advisor/cases/{cid}", headers=ADV).json()["strategy"]["items"]
+    taxes = {it["tax_type"] for it in items}
+    assert {"양도소득세", "취득세", "종합부동산세"} <= taxes
+    review = {"items": [{"index": i, "decision": "채택", "refund": 1_000_000} for i in range(len(items))],
+              "claim_statement": "청구 이유"}
+    client.put(f"/advisor/cases/{cid}/review", json=review, headers=ADV)
+    filed = client.post(f"/advisor/cases/{cid}/file", headers=ADV).json()
+    channels = {s["tax_type"]: s["channel"] for s in filed["filing"]["submissions"]}
+    assert channels == {"양도소득세": "홈택스", "종합부동산세": "홈택스", "취득세": "위택스"}
+    w = next(s for s in filed["filing"]["submissions"] if s["channel"] == "위택스")
+    assert w["receipt_no"].startswith("W")
+
+
+def test_mock_statement_is_grouped_by_tax():
+    draft = analyze(MockAnalyst(), _input())
+    assert "[취득세 · 위택스]" in draft.claim_statement
+    assert "[양도소득세 · 홈택스]" in draft.claim_statement
+    acq = next(it for it in draft.items if it.tax_type == "취득세")
+    assert any("지방세" in b for b in acq.legal_basis)
+    assert "위택스 취득세 신고·납부 내역" in acq.evidence_on_hand

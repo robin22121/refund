@@ -15,6 +15,14 @@
    국세(양도세·종부세)는 홈택스, 취득세는 위택스로 세목별 청구서를 냅니다 (지금은 가짜 접수번호).
 7. 세무서 결과를 기록하면 고객 화면에 성공보수 결제가 열리고, 결제하면 정산이 끝납니다 (가짜 PG).
 
+세목별로 보는 것 (룰 id와 기준값은 `backend/app/rules/config.py`, 사람이 검토할 표는 [docs/세법-기준표.md](docs/세법-기준표.md)):
+
+| 세목 | 자료 | 룰 | 경정청구 |
+|---|---|---|---|
+| 양도소득세 | 홈택스 신고서 | 1주택 비과세, 장특공 거주기간, 필요경비, 비사업용토지, 환산취득가액 | 홈택스, 확정신고기한(다음 해 5.31.)부터 5년 |
+| 취득세 | 위택스 신고서(과세표준·세율·감면) | 주택 수 오류로 중과, 생애최초 감면, 상속 1주택 특례세율 | 위택스, 취득세 신고기한(취득 60일·상속 6개월 등)부터 5년 |
+| 종합부동산세 | 홈택스 고지 내역 | 2주택 중과 오류(2023년분~), 주택 수 특례(2022년분~), 1주택 세액공제 | 홈택스, 그해 12.15.부터 5년 |
+
 수익: 진단은 무료, 환급 성공보수는 세무사가 받고 플랫폼은 세무사에게 건당 고정 이용료를 받습니다.
 요율은 `SUCCESS_FEE_RATE`(기본 15%, 부가세 별도), 이용료는 `PLATFORM_FEE_PER_CASE`(기본 5만 원, 경정청구 제출 시 청구)로 바꿉니다.
 
@@ -33,7 +41,8 @@ backend/app/
   cases.py           접수 → 위임장 → 인증 → 진단 상태 흐름
   registry.py        소재지로 등기부·대장 조회 (지금은 가짜 데이터)
   collectors/        자료 수집기 (mock: 가짜 데이터, hyphen: 하이픈 API)
-  rules/             환급 사유 룰. config.py에 세법 기준값
+  rules/             환급 사유 룰 (capital_gains, acquisition_tax, comprehensive_tax). config.py에 세법 기준값과 조문
+  security.py        저장 암호화, 고객 토큰, 세무사 키 잠금, 접속 기록, 보안 헤더
   analysis/          AI 환급 전략 초안 (claude: Claude API, mock: 가짜)
   claims.py          세무사 검토·제출·결과 모델
   workflow.py        신청 → 검토 → 제출 → 결과 → 성공보수 정산 상태 흐름
@@ -62,5 +71,10 @@ pip install -r requirements.txt uvicorn
 python -m pytest -q
 uvicorn app.main:app --reload   # 고객 화면 http://localhost:8000 · 세무사 검토실 /advisor.html · API 문서 /docs
 ```
+
+## 보안
+
+출시 전 점검 결과와 남은 일은 [docs/보안-점검.md](docs/보안-점검.md)에 있습니다. 요약하면 접수 건은 AES-256-GCM으로 암호화해 저장하고,
+고객 API는 접수 때 받은 토큰(`X-Case-Token`)이 있어야 열리며, 운영 환경(`APP_ENV=production`)에서는 기본 세무사 키와 임시 암호화 키를 쓸 수 없습니다.
 
 기본 수집기는 가짜 데이터입니다. 하이픈 계약 후 `.env.example`을 참고해 `COLLECTOR=hyphen`과 키를 설정합니다.

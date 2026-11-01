@@ -28,6 +28,9 @@
     { id: "expense", label: "취득세·중개수수료를 빼지 않은 것 같아요", sub: "필요경비", rules: ["CGT_MISSING_EXPENSE"] },
     { id: "land", label: "농지·땅이 비사업용이라 세금이 늘었어요", sub: "비사업용토지 중과", rules: ["CGT_NON_BUSINESS_LAND"] },
     { id: "converted", label: "옛날 집이라 취득가액을 환산했어요", sub: "환산취득가액", rules: ["CGT_CONVERTED_PRICE"] },
+    { id: "acqheavy", label: "집 살 때 취득세를 8%나 냈어요", sub: "취득세 중과", rules: ["ACQ_HEAVY_RATE", "ACQ_FIRST_HOME"] },
+    { id: "inherit", label: "물려받은 집 취득세가 많았어요", sub: "상속 취득세", rules: ["ACQ_INHERITED_ONE_HOUSE"] },
+    { id: "crt", label: "집 한 채인데 종부세가 나왔어요", sub: "종합부동산세", rules: ["CRT_HOUSE_COUNT", "CRT_ONE_HOUSE_CREDIT", "CRT_HEAVY_RATE"] },
     { id: "all", label: "잘 모르겠어요. 전부 봐 주세요", rules: [] },
   ];
 
@@ -42,7 +45,8 @@
   const COLLECT_TASKS = [
     "홈택스 양도소득세 신고내역",
     "홈택스 사업·소득 내역",
-    "위택스 취득세·재산세 납부내역",
+    "홈택스 종합부동산세 고지내역",
+    "위택스 취득세 신고·납부내역",
     "주민등록초본 전입 이력",
     "환급 가능성 분석",
   ];
@@ -52,7 +56,7 @@
     start: {
       title: "시작하기 전에",
       items: [
-        ["누가 신청할 수 있나요?", "최근 5년 안에 양도소득세를 신고하고 낸 분이면 누구나 진단받을 수 있어요. 집을 판 다음 해 5월 31일이 신고 기한이고, 그날부터 5년 안에 돌려 달라고 신청(경정청구)할 수 있습니다."],
+        ["누가 신청할 수 있나요?", "최근 5년 안에 양도소득세를 신고하고 낸 분이면 누구나 진단받을 수 있어요. 집을 판 다음 해 5월 31일이 신고 기한이고, 그날부터 5년 안에 돌려 달라고 신청(경정청구)할 수 있습니다. 집을 살 때 낸 취득세(신고기한부터 5년)와 종합부동산세(그해 12월 15일부터 5년)도 함께 봐 드려요."],
         ["이미 세무사가 있어도 되나요?", "진단은 그대로 받으실 수 있어요. 실제로 환급을 신청할 때 누구에게 맡길지는 상담할 때 정하시면 됩니다."],
         ["비용이 드나요?", "진단은 무료입니다. 환급이 확정되었을 때만 세무사 수수료가 생기고, 돌려받는 돈이 없으면 수수료도 없습니다."],
         ["회원가입을 해야 하나요?", "아니요. 이름, 생년월일, 휴대폰 번호만 있으면 됩니다."],
@@ -105,6 +109,7 @@
     birth: "",
     phone: "",
     caseId: null,
+    caseToken: null, // 접수할 때 한 번 받는 접근 토큰. 이 탭의 sessionStorage에만 둔다
     assets: [],
     concerns: [],
     concernText: "",
@@ -153,7 +158,10 @@
   async function api(path, opts = {}) {
     const res = await fetch(API + path, {
       method: opts.method || "GET",
-      headers: opts.body ? { "Content-Type": "application/json" } : undefined,
+      headers: {
+        ...(opts.body ? { "Content-Type": "application/json" } : {}),
+        ...(state.caseToken ? { "X-Case-Token": state.caseToken } : {}),
+      },
       body: opts.body ? JSON.stringify(opts.body) : undefined,
     });
     if (!res.ok) {
@@ -409,7 +417,7 @@
       if (name.length < 2) { err.textContent = "이름을 적어 주세요."; $("#name").focus(); return; }
       if (!parseBirth(birth)) { err.textContent = "생년월일 6자리를 확인해 주세요. 예: 650302"; $("#birth").focus(); return; }
       if (!/^01\d-?\d{3,4}-?\d{4}$/.test(phone)) { err.textContent = "휴대폰 번호를 확인해 주세요."; $("#phone").focus(); return; }
-      Object.assign(state, { name, birth, phone, caseId: null, assets: [], report: null });
+      Object.assign(state, { name, birth, phone, caseId: null, caseToken: null, assets: [], report: null });
       go("lookup");
     };
   };
@@ -442,6 +450,7 @@
         body: { name: state.name, birth_date: parseBirth(state.birth), phone: state.phone.replace(/\D/g, ""), addresses: state.addresses, concern: "" },
       }));
       state.caseId = c.id;
+      state.caseToken = c.access_token;
       state.assets = c.assets;
       save();
       await sleep(400);
@@ -488,7 +497,7 @@
     `;
     const next = $("#next");
     if (next) next.onclick = () => go("concern");
-    $("#fix").onclick = () => { state.caseId = null; state.assets = []; go("address"); };
+    $("#fix").onclick = () => { state.caseId = null; state.caseToken = null; state.assets = []; go("address"); };
   }
 
   SCREENS.concern = () => {
@@ -532,10 +541,10 @@
   };
 
   function handleCaseError(e) {
-    if (e.status === 404) {
+    if (e.status === 404 || e.status === 403) {
       // 서버가 재시작되어 접수 건이 사라진 경우: 자동 조회부터 다시 한다.
       toast("접수 정보가 만료되어 서류 조회부터 다시 진행합니다.");
-      state.caseId = null; state.assets = [];
+      state.caseId = null; state.caseToken = null; state.assets = [];
       go("lookup");
     } else toast(e.message);
   }
@@ -761,9 +770,9 @@
         </article>`).join("")}
       <h2>이 결과는 이렇게 나왔어요</h2>
       <ul class="sources">
-        <li>홈택스 양도소득세 신고내역</li>
+        <li>홈택스 양도소득세 신고내역, 종합부동산세 고지내역</li>
         <li>등기부등본·건축물대장·토지대장·토지이용계획확인원</li>
-        <li>위택스 취득세 납부내역, 주민등록초본 전입 이력</li>
+        <li>위택스 취득세 신고·납부내역, 주민등록초본 전입 이력</li>
       </ul>
       <button type="button" class="share-row" id="share">가족과 결과 함께 보기</button>
       <p class="disclaimer">이 결과는 신고 자료를 자동으로 분석한 참고용 진단입니다. 실제 환급 여부와 금액은 제휴 세무사가 검토한 뒤 확정됩니다.</p>

@@ -2,7 +2,7 @@
 from datetime import datetime, timezone
 
 from .base import AnalysisInput
-from .legal import RULE_PLAYBOOK
+from .legal import CHANNEL, RULE_PLAYBOOK, SOURCE_DOCUMENT
 from .models import StrategyDraft, StrategyItem
 
 _CONF_ORDER = {"높음": 0, "보통": 1, "세무사 검토 필요": 2}
@@ -34,7 +34,7 @@ class MockAnalyst:
                     claim_ground=f.reason,
                     legal_basis=pb.get("legal_basis", []),
                     evidence_on_hand=[d for a in inp.assets if a.property and a.property.id == f.property_id for d in a.documents]
-                    + ["홈택스 양도소득세 신고서"],
+                    + [SOURCE_DOCUMENT.get(f.tax_type, "홈택스 신고 내역")],
                     evidence_needed=f.required_documents,
                     risks=pb.get("risks", "세무사 검토가 필요합니다."),
                     customer_questions=pb.get("questions", []),
@@ -56,10 +56,16 @@ class MockAnalyst:
             + " / ".join(f"{it.priority}. {it.title}({it.tax_type})" for it in items)
             + ". 가짜 분석기 초안이므로 사실관계와 금액을 직접 확인하세요."
         )
-        statement = "\n\n".join(
-            f"{it.priority}. {it.title}\n{it.claim_ground}\n근거: {', '.join(it.legal_basis) or '검토 필요'}"
-            for it in items
-        )
+        # 경정청구서는 세목별로 따로 내므로(국세 홈택스, 지방세 위택스) 청구 이유도 세목별로 나눈다
+        blocks = []
+        for tax in dict.fromkeys(it.tax_type for it in items):
+            body = "\n\n".join(
+                f"{it.priority}. {it.title}\n{it.claim_ground}\n근거: {', '.join(it.legal_basis) or '검토 필요'}"
+                for it in items
+                if it.tax_type == tax
+            )
+            blocks.append(f"[{tax} · {CHANNEL.get(tax, '홈택스')}]\n{body}")
+        statement = "\n\n".join(blocks)
         return StrategyDraft(
             customer_summary=customer,
             advisor_summary=advisor,

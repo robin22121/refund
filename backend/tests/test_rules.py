@@ -18,6 +18,8 @@ def test_sample_hits_expected_rules():
         ("CGT_MISSING_EXPENSE", "apt-1"),
         ("CGT_NON_BUSINESS_LAND", "land-1"),
         ("CGT_CONVERTED_PRICE", "bldg-1"),
+        ("ACQ_HEAVY_RATE", "apt-2"),
+        ("CRT_HOUSE_COUNT", "apt-1"),
     }
 
 
@@ -68,3 +70,18 @@ def test_long_term_deduction_residence_underapplied():
     report = run_diagnosis(data, today=TODAY)
     f = next(f for f in report.findings if f.rule_id == "CGT_LTHD_RESIDENCE")
     assert "80%" in f.reason
+
+
+def test_every_rule_has_playbook_and_channel():
+    from app.analysis.legal import CHANNEL, RULE_PLAYBOOK, SOURCE_DOCUMENT
+    from app.rules import ALL_RULES
+    from app.rules.engine import Rule  # noqa: F401
+    import inspect, re
+
+    ids_in_code = set()
+    for rule in ALL_RULES:
+        ids_in_code |= set(re.findall(r'rule_id="([A-Z_]+)"', inspect.getsource(rule)))
+    assert ids_in_code and ids_in_code <= set(RULE_PLAYBOOK)
+    taxes = {"양도소득세", "취득세", "종합부동산세"}
+    assert taxes <= set(CHANNEL) and taxes <= set(SOURCE_DOCUMENT)
+    assert CHANNEL["취득세"] == "위택스"

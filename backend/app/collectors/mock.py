@@ -1,10 +1,14 @@
-"""하이픈 계약 전 개발용 가짜 수집기. 룰마다 하나씩 걸리도록 만든 예시 자료다."""
+"""하이픈 계약 전 개발용 가짜 수집기. 세목별로 룰이 걸리도록 만든 예시 자료다.
+
+홈택스(양도세·종부세)와 위택스(취득세) 자료를 한 번에 돌려준다.
+"""
 import uuid
 from datetime import date
 
 from ..models import (
     AcquisitionCause,
     CapitalGainsReturn,
+    ComprehensiveTaxReturn,
     LocalTaxPayment,
     Property,
     PropertyKind,
@@ -51,6 +55,15 @@ def sample_taxpayer() -> TaxpayerData:
                 kind=PropertyKind.HOUSE,
                 address="경기도 성남시 분당구 정자일로 95, 203동 704호 (정자동, 느티숲마을아파트)",
                 acquired_on=date(2023, 10, 1),
+                registered_price=700_000_000,
+            ),
+            Property(
+                id="house-3",
+                kind=PropertyKind.HOUSE,
+                address="충청남도 예산군 예산읍 벚꽃로 21 (예산리, 단독주택)",
+                acquired_on=date(2021, 3, 10),
+                acquisition_cause=AcquisitionCause.INHERITANCE,
+                disposed_on=date(2022, 12, 20),
             ),
             Property(
                 id="land-1",
@@ -106,5 +119,24 @@ def sample_taxpayer() -> TaxpayerData:
         ],
         local_tax_payments=[
             LocalTaxPayment(tax_type="취득세", property_id="apt-1", amount=5_280_000, paid_on=date(2012, 6, 20)),
+            # 종전 주택을 판 뒤 샀는데 2주택 중과세율 8%로 신고된 건
+            LocalTaxPayment(
+                tax_type="취득세", property_id="apt-2", amount=56_000_000, paid_on=date(2023, 11, 20),
+                tax_base=700_000_000, rate=0.08,
+            ),
+            LocalTaxPayment(
+                tax_type="취득세", property_id="house-3", amount=3_920_000, paid_on=date(2021, 9, 10),
+                tax_base=140_000_000, rate=0.028,
+            ),
+        ],
+        comprehensive_tax_returns=[
+            # 상속주택 때문에 2주택으로 고지. 2021년분은 주택 수 특례가 없던 해
+            ComprehensiveTaxReturn(
+                year=2021, houses_counted=2, basic_deduction=600_000_000, tax_paid=410_000,
+            ),
+            # 2022년분부터 상속주택(5년 이내)은 주택 수에서 뺄 수 있다
+            ComprehensiveTaxReturn(
+                year=2022, houses_counted=2, basic_deduction=600_000_000, tax_paid=520_000,
+            ),
         ],
     )
