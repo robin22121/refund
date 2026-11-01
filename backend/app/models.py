@@ -103,3 +103,4 @@ class Finding(BaseModel):
 class DiagnosisReport(BaseModel):
     taxpayer_name: str
     findings: list[Finding]
+    concern: str = Field("", description="고객이 적은 검토 희망 항목. AI 분석과 세무사 검토의 출발점")
