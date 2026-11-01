@@ -36,7 +36,11 @@ body {
   background: var(--card); border-bottom: 1px solid var(--line);
 }
 .brand { font-weight: 800; font-size: 1.05rem; color: var(--primary); }
-.back, .topbar-spacer { width: 84px; }
+.back, .help-btn { width: 84px; }
+.help-btn {
+  height: 44px; border: 1px solid var(--line); border-radius: 22px; background: var(--card);
+  font: inherit; font-size: .9rem; font-weight: 700; color: var(--primary); cursor: pointer;
+}
 .back {
   height: 48px; border: 0; background: none; color: var(--text);
   font: inherit; font-size: 1rem; font-weight: 600; text-align: left; padding: 0 8px; cursor: pointer;
@@ -246,3 +250,75 @@ canvas.sign {
   max-width: calc(100% - 40px); padding: 14px 18px; border-radius: 12px;
   background: #23272f; color: #fff; font-weight: 600; text-align: center;
 }
+
+/* 공통 보조 요소 */
+.tags { display: flex; gap: 6px; flex-wrap: wrap; }
+.note {
+  margin: 14px 0; padding: 14px 16px; border-radius: 12px;
+  background: var(--ok-soft); color: #0b5a2d; font-weight: 600; font-size: .95rem;
+}
+.card-title { margin: 0 0 4px; font-size: 1.15rem; }
+.share-row {
+  display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%;
+  min-height: 56px; margin: 20px 0 0; font: inherit; font-weight: 700; color: var(--text);
+  background: var(--card); border: 1px solid var(--line); border-radius: 14px; cursor: pointer;
+}
+.share-row::before { content: "↗"; color: var(--primary); font-weight: 900; }
+
+/* 신청 마감 계산 */
+.year-chips { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.year-chips button {
+  min-height: 52px; font: inherit; font-weight: 700; color: var(--text);
+  background: var(--card); border: 2px solid var(--line); border-radius: 12px; cursor: pointer;
+}
+.year-chips button[aria-pressed=true] { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
+.deadline-box { margin-top: 12px; padding: 14px 16px; border-radius: 12px; font-size: 1rem; }
+.deadline-box.ok { background: var(--primary-soft); }
+.deadline-box.ok .badge { margin-left: 8px; }
+.deadline-box.late { background: var(--warn-soft); color: var(--warn); font-weight: 600; }
+
+/* 자주 묻는 질문 */
+.faq details { background: var(--card); border: 1px solid var(--line); border-radius: 14px; margin-bottom: 8px; }
+.faq summary {
+  list-style: none; min-height: 60px; padding: 14px 44px 14px 16px; position: relative;
+  font-weight: 700; cursor: pointer;
+}
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after { content: "+"; position: absolute; right: 16px; top: 50%; transform: translateY(-50%); font-size: 1.4rem; color: var(--primary); }
+.faq details[open] summary::after { content: "−"; }
+.faq details p { margin: 0; padding: 0 16px 16px; color: var(--muted); }
+.faq-title { font-size: 1rem; color: var(--primary); margin: 22px 0 10px; }
+.faq-title:first-child { margin-top: 4px; }
+
+/* 도움말 시트 */
+.sheet-backdrop { position: fixed; inset: 0; z-index: 30; background: rgba(15, 20, 30, .45); }
+.sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 31;
+  max-width: 560px; max-height: 85vh; margin: 0 auto; overflow-y: auto;
+  background: var(--bg); border-radius: 20px 20px 0 0;
+  padding: 0 20px calc(24px + env(safe-area-inset-bottom));
+}
+.sheet-head {
+  position: sticky; top: 0; display: flex; justify-content: space-between; align-items: center;
+  background: var(--bg); padding: 16px 0 8px;
+}
+.sheet-head h2 { margin: 0; }
+.sheet[hidden], .sheet-backdrop[hidden] { display: none; }
+
+/* 리포트 근거 */
+.sources { margin: 0; padding-left: 22px; color: var(--muted); }
+.sources li { margin: 4px 0; }
+
+/* 신청 후 일정 */
+.timeline { list-style: none; margin: 0; padding: 0; }
+.timeline li { position: relative; padding: 0 0 20px 40px; }
+.timeline li::before {
+  content: ""; position: absolute; left: 6px; top: 4px; width: 18px; height: 18px; border-radius: 50%;
+  background: var(--card); border: 3px solid var(--line);
+}
+.timeline li::after { content: ""; position: absolute; left: 16px; top: 28px; bottom: 0; width: 2px; background: var(--line); }
+.timeline li:last-child::after { display: none; }
+.timeline li.done::before { background: var(--ok); border-color: var(--ok); }
+.timeline li.now::before { border-color: var(--primary); }
+.timeline b { display: block; }
+.timeline span { color: var(--muted); font-size: .9rem; }

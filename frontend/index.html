@@ -12,13 +12,21 @@
   <header class="topbar">
     <button type="button" class="back" id="back" aria-label="이전 화면">‹ 이전</button>
     <span class="brand">세금 돌려받기</span>
-    <span class="topbar-spacer"></span>
+    <button type="button" class="help-btn" id="help-btn" aria-haspopup="dialog">도움말</button>
   </header>
   <div class="progress" id="progress" hidden>
     <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
     <div class="progress-label" id="progress-label"></div>
   </div>
   <main id="app" tabindex="-1"></main>
+  <div class="sheet-backdrop" id="sheet-backdrop" hidden></div>
+  <section class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" hidden>
+    <div class="sheet-head">
+      <h2 id="sheet-title">자주 묻는 질문</h2>
+      <button type="button" class="linkbtn" id="sheet-close">닫기</button>
+    </div>
+    <div id="sheet-body"></div>
+  </section>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
   <script src="app.js"></script>
 </body>
