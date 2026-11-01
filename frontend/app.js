@@ -94,7 +94,7 @@
   };
   const FAQ_GROUP = {
     intro: "start", address: "start", applicant: "info", lookup: "info", concern: "info",
-    mandate: "mandate", auth: "auth", authWait: "auth", collecting: "auth", report: "after", requested: "after",
+    mandate: "mandate", auth: "auth", authWait: "auth", collecting: "auth", report: "after", terms: "after", requested: "after", payment: "after",
   };
 
   // ---------- 상태 ----------
@@ -244,7 +244,7 @@
 
   const BACK = {
     address: "intro", applicant: "address", lookup: "applicant", concern: "lookup",
-    mandate: "concern", auth: "mandate", authWait: "auth",
+    mandate: "concern", auth: "mandate", authWait: "auth", terms: "report", payment: "requested",
   };
   $("#back").addEventListener("click", () => {
     const prev = BACK[state.screen];
@@ -524,7 +524,8 @@
       const concern = [...labels, state.concernText].filter(Boolean).join(" / ");
       $("#next").disabled = true;
       try {
-        await api(`/cases/${state.caseId}/concern`, { method: "PUT", body: { concern } });
+        const concern_rule_ids = CONCERNS.filter((c) => state.concerns.includes(c.id)).flatMap((c) => c.rules);
+        await api(`/cases/${state.caseId}/concern`, { method: "PUT", body: { concern, concern_rule_ids } });
         go("mandate");
       } catch (e) { handleCaseError(e); $("#next").disabled = false; }
     };
@@ -772,30 +773,143 @@
     `;
     $("#share").onclick = () => share(total ? `양도세 환급 진단을 받아 봤는데 약 ${manwon(total)}을 돌려받을 수 있다고 나왔어요. 같이 봐 줄래요?` : "양도세 환급 진단 결과가 나왔어요. 같이 봐 줄래요?");
     const apply = $("#apply");
-    if (apply) apply.onclick = () => { state.requested = true; save(); go("requested"); };
+    if (apply) apply.onclick = () => go("terms");
     const done = $("#done");
     if (done) done.onclick = () => go("requested");
   };
 
-  SCREENS.requested = () => {
+  // 신청 전에 성공보수 약정을 보여 주고 동의를 받는다.
+  SCREENS.terms = async () => {
+    app.innerHTML = `<h1>세무사에게 맡기기 전에<br>비용을 확인해 주세요</h1><p class="lead">불러오는 중…</p>`;
+    let terms;
+    try { terms = await api("/fees/terms"); } catch (e) { toast(e.message); go("report"); return; }
     const agent = mandateInfo?.agent;
+    const total = (state.report?.findings || []).reduce((s, f) => s + (f.estimated_refund || 0), 0);
+    const rate = terms.success_fee_rate;
     app.innerHTML = `
-      <div class="success-ico" aria-hidden="true">✓</div>
-      <h1 class="center">환급 신청을 맡기셨어요</h1>
-      <p class="lead center">${agent ? `${esc(agent.office)} ${esc(agent.name)}가` : "제휴 세무사가"} 1~2 영업일 안에<br><b>${esc(state.phone)}</b>로 연락드립니다.</p>
-      <h2>앞으로 이렇게 진행돼요</h2>
+      <h1>세무사에게 맡기기 전에<br>비용을 확인해 주세요</h1>
+      <div class="card">
+        <dl class="facts">
+          <dt>담당</dt><dd>${agent ? `${esc(agent.office)} ${esc(agent.name)}` : "제휴 세무사"}</dd>
+          <dt>진단·준비</dt><dd>무료</dd>
+          <dt>성공보수</dt><dd>환급 결정액의 ${Math.round(rate * 100)}% (부가세 별도)</dd>
+          <dt>환급이 없으면</dt><dd>0원</dd>
+        </dl>
+      </div>
+      ${total ? `<div class="note">예를 들어 ${manwon(total)}을 돌려받으시면 성공보수는 ${manwon(total * rate)}에 부가세 ${manwon(total * rate * terms.vat_rate)}입니다. 실제 금액은 세무서가 결정한 환급액으로 계산해요.</div>` : ""}
+      <h2>약정 내용</h2>
+      <ul class="sources">${terms.text.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>
+      <div class="choices">
+        <button type="button" class="choice" id="agree" aria-pressed="false"><span class="check" aria-hidden="true">✓</span><span>위 내용을 확인했고 동의합니다</span></button>
+      </div>
+      ${bottom(`<button class="btn" id="next" disabled>동의하고 세무사에게 맡기기</button>`)}
+    `;
+    let agreed = false;
+    $("#agree").onclick = () => { agreed = !agreed; $("#agree").setAttribute("aria-pressed", agreed); $("#next").disabled = !agreed; };
+    $("#next").onclick = async () => {
+      $("#next").disabled = true;
+      const rule_ids = CONCERNS.filter((c) => state.concerns.includes(c.id)).flatMap((c) => c.rules);
+      try {
+        await api(`/cases/${state.caseId}/request`, { method: "POST", body: { agree_fee_terms: true, concern_rule_ids: rule_ids } });
+        state.requested = true; save();
+        go("requested");
+      } catch (e) {
+        if (e.status === 409) { state.requested = true; save(); go("requested"); return; }
+        handleCaseError(e); $("#next") && ($("#next").disabled = false);
+      }
+    };
+  };
+
+  const shortDate = (iso) => { if (!iso) return ""; const d = new Date(iso); return `${d.getMonth() + 1}월 ${d.getDate()}일`; };
+
+  SCREENS.requested = async () => {
+    app.innerHTML = `<h1 class="center">진행 상황을 불러오고 있어요</h1>`;
+    let p;
+    try { p = await api(`/cases/${state.caseId}/progress`); }
+    catch (e) { handleCaseError(e); return; }
+    const agent = mandateInfo?.agent;
+    const st = p.status;
+    const head = {
+      "신청접수": ["환급 신청을 맡기셨어요", `${agent ? `${esc(agent.office)} ${esc(agent.name)}가` : "제휴 세무사가"} 1~2 영업일 안에<br><b>${esc(state.phone)}</b>로 연락드립니다.`],
+      "세무사검토": ["세무사가 확인하고 있어요", "서류와 신고 내용을 하나씩 다시 보고 있어요."],
+      "청구제출": ["세무서에 환급을 신청했어요", "세무서 결과가 나오면 바로 알려 드릴게요."],
+      "환급결정": ["환급이 결정됐어요", `세무서가 <b>${p.decision ? manwon(p.decision.decided_refund) : ""}</b>을 돌려주기로 했어요.`],
+      "불인용": ["이번에는 환급이 안 됐어요", "세무서가 받아들이지 않았어요. 수수료는 없습니다."],
+      "정산완료": ["모든 절차가 끝났어요", "환급금은 고객님 계좌로 들어갑니다. 수고 많으셨어요."],
+    }[st] || ["환급 신청을 맡기셨어요", ""];
+    app.innerHTML = `
+      <div class="success-ico" aria-hidden="true">${st === "불인용" ? "!" : "✓"}</div>
+      <h1 class="center">${head[0]}</h1>
+      <p class="lead center">${head[1]}</p>
+      ${p.message && ["신청접수", "세무사검토", "청구제출"].includes(st) ? `<div class="card concern-box"><span class="small muted">세무사가 드리는 말씀</span><p style="margin:4px 0 0;font-weight:600">${esc(p.message)}</p></div>` : ""}
+      ${p.fee && st === "환급결정" ? `
+        <div class="summary">
+          <div class="label">돌려받는 세금</div>
+          <div class="amount">${manwon(p.fee.refund)}</div>
+          <div class="sub">성공보수 ${won(p.fee.fee)} + 부가세 ${won(p.fee.vat)}</div>
+        </div>` : ""}
+      ${p.payment ? `<div class="card"><b>성공보수 결제 완료</b><br><span class="small muted">${won(p.payment.amount)} · 영수증 번호 ${esc(p.payment.receipt_no)}</span></div>` : ""}
+      ${p.summary && (st === "신청접수" || st === "세무사검토") ? `<h2>세무사가 먼저 볼 내용</h2><p>${esc(p.summary)}</p>` : ""}
+      ${p.questions?.length ? `<details class="card"><summary>세무사가 여쭤볼 수 있는 것 ${p.questions.length}가지</summary><ul>${p.questions.map((q) => `<li>${esc(q)}</li>`).join("")}</ul><p class="small muted">미리 생각해 두시면 통화가 짧아져요. 모르시면 모른다고 하셔도 됩니다.</p></details>` : ""}
+      ${p.adopted?.length ? `<h2>세무서에 신청한 항목</h2><ul class="sources">${p.adopted.map((a) => `<li>${esc(a.title)} <span class="small muted">${esc(a.tax_type)}${a.refund ? ` · 약 ${manwon(a.refund)}` : ""}</span></li>`).join("")}</ul>` : ""}
+      <h2>진행 단계</h2>
       <ol class="timeline">
-        <li class="done"><b>신청 접수</b><span>오늘</span></li>
-        <li class="now"><b>세무사 확인</b><span>1~2주 · 추가 영수증이 필요하면 전화로 안내</span></li>
-        <li><b>세무서에 환급 신청</b><span>세무사가 경정청구서를 대신 냅니다</span></li>
-        <li><b>세무서 결과 통지</b><span>신청한 날부터 2개월 안에</span></li>
-        <li><b>환급금 입금</b><span>고객님 계좌로 바로 들어갑니다</span></li>
+        ${p.steps.map((s) => `<li class="${s.state}"><b>${esc(s.label)}${s.at ? ` <span>· ${shortDate(s.at)}</span>` : ""}</b><span>${esc(s.detail)}</span></li>`).join("")}
       </ol>
       <div class="note">단계가 바뀔 때마다 ${esc(state.phone)}로 알림톡을 보내 드려요.</div>
-      <p class="small muted">진단은 무료입니다. 수수료는 환급이 확정되었을 때만 세무사와 약정한 만큼 냅니다. 세무서에 내기 전이라면 언제든 취소할 수 있어요.</p>
-      ${bottom(`<button class="btn secondary" id="back-report">진단 결과 다시 보기</button>`)}
+      ${st === "신청접수" ? `<p class="small muted">세무서에 내기 전이라면 언제든 취소할 수 있고 비용이 없습니다.</p>` : ""}
+      ${bottom(st === "환급결정"
+        ? `<button class="btn" id="pay">성공보수 결제하기</button>`
+        : `<button class="btn secondary" id="refresh">새로 고침</button><button class="btn ghost" id="back-report">진단 결과 다시 보기</button>`)}
     `;
-    $("#back-report").onclick = () => go("report");
+    const pay = $("#pay"); if (pay) pay.onclick = () => go("payment");
+    const r = $("#refresh"); if (r) r.onclick = () => render();
+    const b = $("#back-report"); if (b) b.onclick = () => go("report");
+  };
+
+  const PAY_METHODS = [
+    { id: "card", name: "신용·체크카드" },
+    { id: "transfer", name: "계좌이체" },
+    { id: "kakaopay", name: "카카오페이" },
+  ];
+
+  SCREENS.payment = async () => {
+    let p;
+    try { p = await api(`/cases/${state.caseId}/progress`); } catch (e) { handleCaseError(e); return; }
+    if (!p.fee || p.status !== "환급결정") { go("requested"); return; }
+    let method = "card";
+    const agent = mandateInfo?.agent;
+    app.innerHTML = `
+      <h1>성공보수를 결제해 주세요</h1>
+      <p class="lead">약정하신 대로 세무서가 결정한 환급액을 기준으로 계산했어요.</p>
+      <div class="card">
+        <dl class="facts">
+          <dt>환급 결정액</dt><dd>${won(p.fee.refund)}</dd>
+          <dt>성공보수</dt><dd>${won(p.fee.fee)}</dd>
+          <dt>부가세</dt><dd>${won(p.fee.vat)}</dd>
+          <dt>결제할 금액</dt><dd><strong class="num">${won(p.fee.total)}</strong></dd>
+          <dt>받는 곳</dt><dd>${agent ? esc(agent.office) : "담당 세무사"}</dd>
+        </dl>
+      </div>
+      <h2>결제 방법</h2>
+      <div class="choices" role="group" aria-label="결제 방법">
+        ${PAY_METHODS.map((m) => `<button type="button" class="choice pm" data-id="${m.id}" aria-pressed="${m.id === method}"><span class="check" aria-hidden="true">✓</span><span>${m.name}</span></button>`).join("")}
+      </div>
+      <p class="small muted" style="margin-top:16px">체험판에서는 실제로 돈이 나가지 않아요.</p>
+      ${bottom(`<button class="btn" id="next">${won(p.fee.total)} 결제하기</button>`)}
+    `;
+    app.querySelectorAll(".pm").forEach((b) => (b.onclick = () => {
+      method = b.dataset.id;
+      app.querySelectorAll(".pm").forEach((x) => x.setAttribute("aria-pressed", x.dataset.id === method));
+    }));
+    $("#next").onclick = async () => {
+      $("#next").disabled = true;
+      try {
+        await api(`/cases/${state.caseId}/payment`, { method: "POST", body: { method } });
+        toast("결제를 마쳤어요.");
+        go("requested");
+      } catch (e) { toast(e.message); $("#next").disabled = false; }
+    };
   };
 
   // 체험판 표시용: 위임장 화면이 아닌 곳에서 완료 화면을 열면 세무사 정보를 미리 불러 둔다.
